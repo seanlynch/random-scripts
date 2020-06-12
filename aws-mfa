@@ -1,0 +1,35 @@
+#!/bin/bash
+# Set this to a duration that works for you.
+duration_seconds=43200
+
+if [ $# != 2 ]
+then
+    echo "Usage: $0 <target_profile> <otp>"
+    echo "target_profile is the profile you want to set your session credentials on, NOT the profile with your long-term credentials. This will overwrite your long-term credentials if you get that wrong."
+    echo "You can use the target profile as source_profile for profiles with a role_arn setting for each role you want to assume, if there's more than one."
+    exit 1
+fi
+
+target_profile="$1"
+otp="$2"
+
+mfa_serial="$(aws configure get mfa_serial)"
+if [ $? != 0 ]
+then
+    echo "You must set mfa_serial in the profile you use to invoke this script (not the target profile)."
+    exit 1
+fi
+
+json="$(aws sts get-session-token --duration-seconds "$duration_seconds" --serial-number "$mfa_serial" --token-code "$otp")"
+if [ $? != 0 ]
+then
+    echo "Your long-term credentials must either be in your environment or on the AWS_PROFILE you use to invoke this script (not the target profile)."
+    exit 1
+fi
+
+token="$(echo "$json" | jq -r '.Credentials.SessionToken')"
+key_id="$(echo "$json" | jq -r '.Credentials.AccessKeyId')"
+secret="$(echo "$json" | jq -r '.Credentials.SecretAccessKey')"
+aws configure set profile."$target_profile".aws_access_key_id "$key_id"
+aws configure set profile."$target_profile".aws_secret_access_key "$secret"
+aws configure set profile."$target_profile".aws_session_token "$token"
